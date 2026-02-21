@@ -1,0 +1,78 @@
+{
+  "name": "reqtracer",
+  "version": "0.1.0",
+  "displayName": "ReqTracer",
+  "description": "Requirements traceability for VS Code - navigate between specs, code, and tests",
+  "publisher": "reqtracer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WinniX/reqtracer-vscode.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Requirements",
+    "Traceability",
+    "Testing",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "workspaceContains:.reqtracer/config.json"
+  ],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "vitest run",
+    "test:e2e": "vscode-test",
+    "package": "pnpm build && npx @vscode/vsce package --no-dependencies",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@reqtracer/core": "workspace:*",
+    "@reqtracer/neo4j-import": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.4.0",
+    "esbuild": "^0.24.0",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "reqtracer.initialize",
+        "title": "ReqTracer: Initialize"
+      },
+      {
+        "command": "reqtracer.showRequirement",
+        "title": "ReqTracer: Show Requirement"
+      },
+      {
+        "command": "reqtracer.showFileRequirements",
+        "title": "ReqTracer: Show Requirements for File"
+      },
+      {
+        "command": "reqtracer.visualize",
+        "title": "ReqTracer: Visualize"
+      }
+    ],
+    "configuration": {
+      "title": "ReqTracer",
+      "properties": {
+        "reqtracer.aiTool": {
+          "type": "string",
+          "enum": [
+            "opencode",
+            "claude-code"
+          ],
+          "default": "opencode",
+          "description": "AI tool to use for slash commands"
+        }
+      }
+    }
+  }
+}
