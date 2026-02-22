@@ -9,3 +9,4 @@ tsconfig.json
 .gitignore
 vitest.workspace.ts
 pnpm-lock.yaml
+.env

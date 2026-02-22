@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { createConfig, loadConfig } from "@reqtracer/core";
-import type { ProjectConfig, AiTool } from "@reqtracer/core";
+import { createConfig, loadConfig } from "../core/index.js";
+import type { ProjectConfig, AiTool } from "../core/index.js";
 import { copyCommandFiles } from "./copy-commands.js";
 
 export function registerInitializeCommand(context: vscode.ExtensionContext): void {

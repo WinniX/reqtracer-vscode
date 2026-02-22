@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { hashFile } from "@reqtracer/core";
+
 import { DataCache } from "../providers/data-cache.js";
 import * as path from "path";
 

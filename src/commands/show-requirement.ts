@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { DataCache } from "../providers/data-cache.js";
 import { resolveSymbolLocation } from "../symbol-resolver/symbol-resolver.js";
-import type { TraceLink } from "@reqtracer/core";
+import type { TraceLink } from "../core/index.js";
 
 export function registerShowRequirementCommand(context: vscode.ExtensionContext): void {
   const disposable = vscode.commands.registerCommand(

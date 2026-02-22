@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "displayName": "ReqTracer",
   "description": "Requirements traceability for VS Code - navigate between specs, code, and tests",
-  "publisher": "reqtracer",
+  "publisher": "WinniX",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -13,8 +13,7 @@
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Requirements",
-    "Traceability",
+    "Other",
     "Testing",
     "Visualization"
   ],
@@ -31,10 +30,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@reqtracer/core": "workspace:*",
-    "@reqtracer/neo4j-import": "workspace:*"
+    "neo4j-driver": "^5.25.0"
   },
   "devDependencies": {
+    "@types/node": "^25.3.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.4.0",
     "esbuild": "^0.24.0",

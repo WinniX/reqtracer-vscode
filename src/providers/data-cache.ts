@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { loadRequirements, loadMappings } from "@reqtracer/core";
-import type { RequirementsFile, MappingsFile, TraceLink, Requirement } from "@reqtracer/core";
+import { loadRequirements, loadMappings } from "../core/index.js";
+import type { RequirementsFile, MappingsFile, TraceLink, Requirement } from "../core/index.js";
 
 export class DataCache {
   private static instance: DataCache | null = null;

@@ -3,8 +3,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import * as net from "net";
 import * as http from "http";
-import { loadRequirements, loadMappings } from "@reqtracer/core";
-import { createDriver, importToNeo4j } from "@reqtracer/neo4j-import";
+import { loadRequirements, loadMappings } from "../core/index.js";
+import { createDriver, importToNeo4j } from "../neo4j-import/index.js";
 
 const execFileAsync = promisify(execFile);
 

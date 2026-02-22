@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import type { AiTool } from "@reqtracer/core";
+import type { AiTool } from "../core/index.js";
 
 const COMMAND_FILES = [
   "reqtracer.init.md",
@@ -11,7 +11,7 @@ const COMMAND_FILES = [
   "reqtracer.remap.md",
 ];
 
-export function registerCopyCommandsCommand(context: vscode.ExtensionContext): void {
+export function registerCopyCommandsCommand(_context: vscode.ExtensionContext): void {
   // This is an internal command, not exposed in command palette
   // Called by the initialize command
 }
