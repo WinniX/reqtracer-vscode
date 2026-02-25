@@ -1,6 +1,6 @@
 {
   "name": "reqtracer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "displayName": "ReqTracer",
   "description": "Requirements traceability for VS Code - navigate between specs, code, and tests",
   "publisher": "WinniX",
@@ -12,6 +12,7 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "icon": "extension_icon.png",
   "categories": [
     "Other",
     "Testing",
