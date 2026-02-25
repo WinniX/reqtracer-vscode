@@ -1,6 +1,6 @@
 {
   "name": "reqtracer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "ReqTracer",
   "description": "Requirements traceability for VS Code - navigate between specs, code, and tests",
   "publisher": "WinniX",
