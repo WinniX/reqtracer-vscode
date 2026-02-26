@@ -53,6 +53,7 @@ Divide the remaining files (excluding completed ones if resuming) into batches p
    - `type`: "code" for source files, "test" for test files
    - `target`: For code: `{ filePath, symbolName, symbolType }`. For tests: `{ filePath, testName }`
    - `reasoning`: A brief explanation of WHY this symbol implements/tests this requirement
+   - Limit: max 5 mappings per file — pick the strongest matches if more are found
 6. Compute SHA-256 hash of the file
 
 #### Small strategy (1–15 files)
@@ -72,17 +73,25 @@ Process in batches of 10:
 
 #### Large strategy (51+ files)
 
-Process in batches of 8, delegating to subagents:
-- Build a condensed requirements list for subagent prompts containing only: `id`, `title`, `category` (omit fullText, sourceFile, line numbers to keep context lean)
-- For each batch, launch a `Task` subagent (`subagent_type: "general-purpose"`) with:
-  - The list of file paths to process
-  - The condensed requirements list
-  - The per-file mapping logic rules (copy from above)
-  - Instruction to return a JSON object: `{ "mappings": [...], "fileHashes": { "path": "sha256hex", ... } }`
-- Main agent collects results from each subagent and merges into `mappings.json` and `file-hashes.json`
-- After each subagent completes: write updated `mappings.json`, `file-hashes.json`, and `map-progress.json` to disk
-- If a subagent fails: log the failure, mark its files as incomplete for retry in a subsequent batch
+Process in batches of 8, delegating to subagents **sequentially** (one batch at a time):
+
+**Preparation — write shared context file once:**
+- Build a condensed requirements list containing only: `id`, `title`, `category` (omit fullText, sourceFile, line numbers)
+- Write it along with the per-file mapping logic rules to `.reqtracer/map-context.json` (see schema below)
+- This file is written once and read by every subagent, avoiding context duplication in prompts
+
+**Per-batch processing (sequential loop):**
+- For each batch, launch **one** `Task` subagent (`subagent_type: "general-purpose"`) with a **short** prompt containing only:
+  - The batch number and list of file paths for this batch
+  - Instruction to read shared context (requirements + mapping rules) from `.reqtracer/map-context.json`
+  - Instruction to write results to `.reqtracer/batch-results.json` (see schema below)
+- **Wait** for the subagent to complete before launching the next batch
+- Read `.reqtracer/batch-results.json` from disk and merge into `mappings.json` and `file-hashes.json`
+- Write updated `mappings.json`, `file-hashes.json`, and `map-progress.json` to disk
+- If a subagent fails: log the failure, mark its files as incomplete for retry after all other batches
 - Report: `"Batch {n}/{total}: {count} mappings found in {fileCount} files. Running total: {sum} mappings"`
+
+**Cleanup:** Delete `.reqtracer/map-context.json` and `.reqtracer/batch-results.json` after all batches complete.
 
 ### 3. Completion
 
@@ -118,6 +127,51 @@ Process in batches of 8, delegating to subagents:
 {
   "version": "1.0",
   "hashes": {
+    "src/auth.ts": { "hash": "<sha256-hex>", "mappedAt": "<ISO 8601>" }
+  }
+}
+```
+
+### map-context.json
+
+Shared context file written once before Large strategy batching begins. Read by each subagent. Deleted after all batches complete.
+
+```json
+{
+  "version": "1.0",
+  "requirements": [
+    { "id": "REQ-auth-001", "title": "User login", "category": "auth" }
+  ],
+  "mappingRules": {
+    "symbolTypes": ["function", "class", "method", "interface", "export", "variable"],
+    "testPatterns": ["describe/it blocks", "test functions"],
+    "maxMappingsPerFile": 5,
+    "recordFields": {
+      "requirementId": "REQ-{category}-{seq} ID",
+      "type": "code | test",
+      "target": "For code: { filePath, symbolName, symbolType }. For tests: { filePath, testName }",
+      "reasoning": "Brief explanation of WHY this symbol implements/tests the requirement"
+    }
+  }
+}
+```
+
+### batch-results.json
+
+Temporary file written by each subagent with its batch results. Read and merged by the main agent, then overwritten by the next batch.
+
+```json
+{
+  "batchId": 1,
+  "mappings": [
+    {
+      "requirementId": "REQ-auth-001",
+      "type": "code",
+      "target": { "filePath": "src/auth.ts", "symbolName": "handleLogin", "symbolType": "function" },
+      "reasoning": "This function implements the login flow"
+    }
+  ],
+  "fileHashes": {
     "src/auth.ts": { "hash": "<sha256-hex>", "mappedAt": "<ISO 8601>" }
   }
 }
