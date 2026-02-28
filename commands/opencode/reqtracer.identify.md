@@ -64,7 +64,7 @@ Process in batches of 10:
 #### Large strategy (31+ files)
 
 Process in batches of 8, delegating to subagents:
-- For each batch, launch a `Task` subagent (subagent_type: "general-purpose") with:
+- For each batch, launch a `Task` subagent (subagent_type: "general") with:
   - The list of file paths to process
   - The list of existing category slugs to prefer reusing
   - The rules for identifying requirements and assigning category slugs (copy the rules below)

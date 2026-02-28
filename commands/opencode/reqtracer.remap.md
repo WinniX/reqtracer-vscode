@@ -22,14 +22,16 @@ This command uses phased execution with batching, progressive checkpointing, and
 - Read `.reqtracer/config.json` for `sourceDirs` and `testDirs`
 - Read `.reqtracer/file-hashes.json` and `.reqtracer/mappings.json`
 - Read `.reqtracer/requirements.json` to get the full list of requirements
-- Use Glob to collect all current source and test files from `sourceDirs` and `testDirs`
+- Use Glob to collect all current source and test files from `sourceDirs` and `testDirs`, applying these **exclusion rules**:
+  - Skip binary and non-source files: `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, `*.svg`, `*.ico`, `*.woff`, `*.woff2`, `*.ttf`, `*.eot`, `*.mp3`, `*.mp4`, `*.wav`, `*.ogg`, `*.pdf`, `*.zip`, `*.gz`, `*.tar`, `*.wasm`, `*.node`, `*.pyc`, `*.pyo`, `*.class`, `*.o`, `*.so`, `*.dylib`, `*.dll`, `*.exe`, `*.map`, `*.min.js`, `*.min.css`, `*.d.ts`
+  - Skip generated/vendored directories: `node_modules/`, `dist/`, `build/`, `.next/`, `coverage/`, `vendor/`, `__pycache__/`, `.venv/`, `target/`, `.git/`
 - For each file in `file-hashes.json`, compute current SHA-256 hash
 - Identify **stale files**: files where current hash differs from stored hash
 - Identify **missing files**: files in `file-hashes.json` that no longer exist on disk
 - If no stale files and no missing files: report "All mappings are current. No files need remapping." and exit
 - Set processing strategy based on **stale file count** (not total file count):
-  - **Small** (1–15 stale files): Single pass, no batching
-  - **Medium** (16–50 stale files): Batches of 10 files, main agent processes directly
+  - **Small** (1-15 stale files): Single pass, no batching
+  - **Medium** (16-50 stale files): Batches of 10 files, main agent processes directly
   - **Large** (51+ stale files): Batches of 8 files, delegate each batch to a subagent via the `Task` tool
 - Report to the user: stale file count, missing file count, and chosen strategy
 
@@ -39,15 +41,17 @@ This command uses phased execution with batching, progressive checkpointing, and
   - If it exists: ask the user whether to resume the previous run or start fresh
   - If resuming: load progress file, skip already-completed stale files
   - If starting fresh: delete the progress file
+- Read `.reqtracer/mappings.json` — remove mappings for any stale file (will be re-mapped) or missing file (no longer exists). Write back. This preserves mappings for unchanged files.
 
 ### 2. Handle Missing Files
 
-For each missing file:
-1. Remove all mappings in `mappings.json` where `target.filePath` matches the missing file
-2. Remove the file's entry from `file-hashes.json`
-3. Collect the requirement IDs that were affected (had mappings to the missing file)
+Mappings for missing files were already removed in Step 1. Now clean up hashes and report:
 
-- Write updated `mappings.json` and `file-hashes.json` to disk
+For each missing file:
+1. Remove the file's entry from `file-hashes.json`
+2. Collect the requirement IDs that were affected (had mappings to the missing file, removed in Step 1)
+
+- Write updated `file-hashes.json` to disk
 - Report: `"Removed mappings for {count} deleted file(s). Affected requirements: {reqIds}"`
 
 ### 3. Batched Remapping
@@ -64,47 +68,58 @@ Divide the stale files (excluding completed ones if resuming) into batches per t
    - `requirementId`: The REQ-{category}-{seq} ID
    - `type`: "code" for source files, "test" for test files
    - `target`: For code: `{ filePath, symbolName, symbolType }`. For tests: `{ filePath, testName }`
-   - `reasoning`: A brief explanation of WHY this symbol implements/tests this requirement
+   - `reasoning`: Max 15 words explaining WHY this symbol implements/tests this requirement
    - Limit: max 5 mappings per file — pick the strongest matches if more are found
 6. Replace all previous mappings for this file in `mappings.json` with the new ones
-7. Compute SHA-256 hash of the file and update `file-hashes.json`
 
-#### Small strategy (1–15 stale files)
+#### Small strategy (1-15 stale files)
 
 Process all stale files in a single pass:
 - Read each file, apply per-file remapping logic
 - No intermediate checkpointing needed
-- After all files: write `mappings.json` and `file-hashes.json`
+- After all files: compute SHA-256 hash of each processed file, then write `mappings.json` and `file-hashes.json`
 
-#### Medium strategy (16–50 stale files)
+#### Medium strategy (16-50 stale files)
 
 Process in batches of 10:
 - For each batch: read all files, apply per-file remapping logic
-- After each batch: write updated `mappings.json` and `file-hashes.json` to disk (incremental write so completed work survives timeouts)
-- After each batch: write intermediate state to `.reqtracer/remap-progress.json`
+- After each batch: compute SHA-256 hash of each file in the batch
+- After each batch: use Bash to merge new mappings into `mappings.json` on disk — do NOT re-read the full existing `mappings.json` into context. Use a script like: `node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('.reqtracer/mappings.json')); const b=JSON.parse(process.argv[1]); m.mappings.push(...b); fs.writeFileSync('.reqtracer/mappings.json', JSON.stringify(m,null,2))" '<new_mappings_json>'`
+- After each batch: write updated `file-hashes.json` and `remap-progress.json` to disk
 - Report: `"Batch {n}/{total}: {count} mappings found in {fileCount} files. Running total: {sum} mappings"`
 
 #### Large strategy (51+ stale files)
 
 Process in batches of 8, delegating to subagents **sequentially** (one batch at a time):
 
-**Preparation — write shared context file once:**
-- Build a condensed requirements list containing only: `id`, `title`, `category` (omit fullText, sourceFile, line numbers)
-- Write it along with the per-file remapping logic rules to `.reqtracer/remap-context.json` (see schema below)
-- This file is written once and read by every subagent, avoiding context duplication in prompts
-
 **Per-batch processing (sequential loop):**
-- For each batch, launch **one** `Task` subagent (`subagent_type: "general-purpose"`) with a **short** prompt containing only:
-  - The batch number and list of file paths for this batch
-  - Instruction to read shared context (requirements + remapping rules) from `.reqtracer/remap-context.json`
-  - Instruction to write results to `.reqtracer/batch-results.json` (see schema below)
+- **Before** launching the subagent: delete `.reqtracer/batch-context-{batchId}.json` if it exists from a previous failed run
+- **Write** a per-batch context file `.reqtracer/batch-context-{batchId}.json` containing ONLY:
+  - A condensed requirements list: `id`, `title`, `category` for each requirement (omit fullText, sourceFile, line numbers)
+  - The list of file paths for this batch
+  - The per-file remapping logic rules
+  - This keeps subagent context minimal — it reads only its own batch data
+- Launch **one** `Task` subagent (`subagent_type: "general"`) with the prompt:
+  ```
+  Read `.reqtracer/batch-context-{batchId}.json`.
+  Batch: {batchId}
+  Files: {fileList}
+  For each file, read its content. Match symbols against requirements from `requirements`.
+  Record: requirementId, type (code|test), target, reasoning (max 15 words).
+  Max 5 mappings per file. Replace all previous mappings for each file.
+  Write results to `.reqtracer/batch-results-{batchId}.json`.
+  ```
 - **Wait** for the subagent to complete before launching the next batch
-- Read `.reqtracer/batch-results.json` from disk and merge into `mappings.json` and `file-hashes.json`
-- Write updated `mappings.json`, `file-hashes.json`, and `remap-progress.json` to disk
+- Read `.reqtracer/batch-results-{batchId}.json` from disk
+- **Validate** that the `batchId` in the results file matches the expected batch number. If it does not match, log a warning and skip this batch (mark files for retry).
+- Merge results into `mappings.json` on disk using Bash — do NOT re-read the full cumulative `mappings.json` into context. Use a merge script: `node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('.reqtracer/mappings.json')); const b=JSON.parse(fs.readFileSync('.reqtracer/batch-results-{batchId}.json')); m.mappings.push(...b.mappings); m.generatedAt=new Date().toISOString(); fs.writeFileSync('.reqtracer/mappings.json', JSON.stringify(m,null,2))"`
+- **Compute SHA-256 hash** of each file in the batch (the main agent does this, not the subagent)
+- Write updated `file-hashes.json` and `remap-progress.json` to disk
+- Delete the processed `.reqtracer/batch-context-{batchId}.json` and `.reqtracer/batch-results-{batchId}.json`
 - If a subagent fails: log the failure, mark its files as incomplete for retry after all other batches
 - Report: `"Batch {n}/{total}: {count} mappings found in {fileCount} files. Running total: {sum} mappings"`
 
-**Cleanup:** Delete `.reqtracer/remap-context.json` and `.reqtracer/batch-results.json` after all batches complete.
+**Cleanup:** Delete any remaining `batch-context-*.json` and `batch-results-*.json` files.
 
 ### 4. Completion
 
@@ -129,7 +144,7 @@ Process in batches of 8, delegating to subagents **sequentially** (one batch at 
       "requirementId": "REQ-auth-001",
       "type": "code",
       "target": { "filePath": "src/auth.ts", "symbolName": "handleLogin", "symbolType": "function" },
-      "reasoning": "This function implements the login flow"
+      "reasoning": "Implements login flow with credential validation"
     }
   ]
 }
@@ -145,34 +160,36 @@ Process in batches of 8, delegating to subagents **sequentially** (one batch at 
 }
 ```
 
-### remap-context.json
+### batch-context-{batchId}.json (Large strategy only)
 
-Shared context file written once before Large strategy batching begins. Read by each subagent. Deleted after all batches complete.
+Per-batch context file written by the main agent before launching each subagent. Contains ONLY the data relevant to that specific batch. Deleted after the batch is processed.
 
 ```json
 {
-  "version": "1.0",
+  "batchId": 1,
   "requirements": [
     { "id": "REQ-auth-001", "title": "User login", "category": "auth" }
   ],
+  "files": ["src/auth.ts", "test/auth.test.ts"],
   "remappingRules": {
     "symbolTypes": ["function", "class", "method", "interface", "export", "variable"],
     "testPatterns": ["describe/it blocks", "test functions"],
     "maxMappingsPerFile": 5,
+    "reasoningMaxWords": 15,
     "recordFields": {
       "requirementId": "REQ-{category}-{seq} ID",
       "type": "code | test",
       "target": "For code: { filePath, symbolName, symbolType }. For tests: { filePath, testName }",
-      "reasoning": "Brief explanation of WHY this symbol implements/tests the requirement"
+      "reasoning": "Max 15 words explaining WHY this symbol implements/tests the requirement"
     },
     "replaceExisting": "Replace all previous mappings for each file with new ones"
   }
 }
 ```
 
-### batch-results.json
+### batch-results-{batchId}.json (Large strategy only)
 
-Temporary file written by each subagent with its batch results. Read and merged by the main agent, then overwritten by the next batch.
+Temporary file written by each subagent with its batch results. Each batch writes to its own numbered file. Read and merged by the main agent, then deleted.
 
 ```json
 {
@@ -182,12 +199,9 @@ Temporary file written by each subagent with its batch results. Read and merged 
       "requirementId": "REQ-auth-001",
       "type": "code",
       "target": { "filePath": "src/auth.ts", "symbolName": "handleLogin", "symbolType": "function" },
-      "reasoning": "This function implements the login flow"
+      "reasoning": "Implements login flow with credential validation"
     }
-  ],
-  "fileHashes": {
-    "src/auth.ts": { "hash": "<sha256-hex>", "mappedAt": "<ISO 8601>" }
-  }
+  ]
 }
 ```
 
